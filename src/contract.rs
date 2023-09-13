@@ -5,9 +5,9 @@ use cosmwasm_std::{
 };
 
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse, Snip20Msg,
-    ReceiveMsg, BjStateResponse,
+    ReceiveMsg, BjStateResponse, TicketLogResponse,
 };
-use crate::state::{STATE, State, ADMIN, Admin, TICKETS, Blackjack, BLACKJACK};
+use crate::state::{STATE, State, ADMIN, Admin, TICKETS, Blackjack, BLACKJACK, TICKETLOG};
 use crate::operations::{deposit_receive};
 use crate::blackjack::{try_blackjack, blackjack_receive};
 use crate::roulette::{roulette_receive};
@@ -179,6 +179,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::GetState {} => to_binary(&query_state(deps)?),
         QueryMsg::BjState {address} => to_binary(&query_bjstate(deps, address)?),
+        QueryMsg::TicketLog {address} => to_binary(&query_ticket_log(deps, address)?),
     }
 }
 
@@ -205,4 +206,15 @@ fn query_bjstate(deps: Deps, address: Addr) -> StdResult<BjStateResponse> {
     bj_state.dealer.remove(0);
 
     Ok(BjStateResponse { state: bj_state })
+}
+
+fn query_ticket_log(deps: Deps, address: Addr) -> StdResult<TicketLogResponse> {
+
+    let mut ticket_log_option:Option<Vec<u32>> = TICKETLOG.get(deps.storage, &address);
+    if ticket_log_option.is_none() {
+        ticket_log_option = Some(Vec::new());
+    }
+    let ticket_log:Vec<u32> = ticket_log_option.unwrap();
+
+    Ok(TicketLogResponse { tickets: ticket_log })
 }

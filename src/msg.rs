@@ -58,6 +58,7 @@ pub enum ReceiveMsg {
 pub enum QueryMsg {
     GetState {},
     BjState {address: Addr,},
+    TicketLog {address: Addr,},
 }
 // We define a custom struct for each query response
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
@@ -68,6 +69,11 @@ pub struct StateResponse {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct BjStateResponse {
     pub state: Blackjack,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct TicketLogResponse {
+    pub tickets: Vec<u32>,
 }
 
 // Messages sent to SNIP-20 contracts
