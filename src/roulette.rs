@@ -3,7 +3,7 @@ WasmMsg,
 };
 
 use crate::msg::{Snip20Msg, BetMsg};
-use crate::state::{ADMIN, STATE};
+use crate::state::{STATE, LastSpin, LASTSPIN};
 
 
 
@@ -273,25 +273,36 @@ pub fn roulette_receive(
     state.jackpot += jackpot_send;
     STATE.save(deps.storage, &state).unwrap();
 
-    let mut admin = ADMIN.load(deps.storage).unwrap();
-    admin.vault += amount.u128() - jackpot_send;
-    admin.vault -= sendback;
-    ADMIN.save(deps.storage, &admin).unwrap();
+    let roulette_history = LastSpin {
+        winning_number: spin,
+        bets: bets,
+        winnings: sendback,
+    };
+    LASTSPIN.insert(deps.storage, &from, &roulette_history).unwrap();
 
-    let msg = to_binary(&Snip20Msg::transfer_snip(
-        from,
-        sendback.into(),
-    ))?;
-    let message = CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: state.known_snip.to_string(),
-        code_hash: state.snip_hash,
-        msg,
-        funds: vec![],
-    });
-    let response = Response::new()
-    .add_attribute("random_number", spin.to_string())
-    .add_attribute("winValue", winnings.to_string())
-    .add_attribute("betTotal", bettotal.to_string())
-    .add_message(message);
-    Ok(response)
+    if sendback > 0 {
+
+        let msg = to_binary(&Snip20Msg::transfer_snip(
+            from,
+            sendback.into(),
+        ))?;
+        let message = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: state.known_snip.to_string(),
+            code_hash: state.snip_hash,
+            msg,
+            funds: vec![],
+        });
+        let response = Response::new()
+        .add_attribute("random_number", spin.to_string())
+        .add_attribute("winValue", winnings.to_string())
+        .add_attribute("betTotal", bettotal.to_string())
+        .add_message(message);
+        Ok(response)
+    } else {
+        let response = Response::new()
+        .add_attribute("random_number", spin.to_string())
+        .add_attribute("winValue", winnings.to_string())
+        .add_attribute("betTotal", bettotal.to_string());
+        Ok(response)
+    }
 }

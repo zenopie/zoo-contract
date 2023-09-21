@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{Addr, Binary, Uint128};
 
-use crate::state::{State, Blackjack};
+use crate::state::{State, Blackjack, LastSpin};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -15,7 +15,7 @@ pub struct InstantiateMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    Test {
+    Withdraw {
         amount: Uint128,
     },
     Raffle {},
@@ -59,6 +59,8 @@ pub enum QueryMsg {
     GetState {},
     BjState {address: Addr,},
     TicketLog {address: Addr,},
+    LastRaffle {address: Addr,},
+    LastRoulette {address: Addr,},
 }
 // We define a custom struct for each query response
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
@@ -74,6 +76,17 @@ pub struct BjStateResponse {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct TicketLogResponse {
     pub tickets: Vec<u32>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct LastRaffleResponse {
+    pub winner: u32,
+    pub tickets: Vec<u32>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct LastRouletteResponse {
+    pub last_spin: LastSpin,
 }
 
 // Messages sent to SNIP-20 contracts

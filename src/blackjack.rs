@@ -20,7 +20,7 @@ pub fn try_blackjack(
     let mut bj_state:Blackjack = bj_state_option.unwrap();
 
     let mut deck = bj_state.deck.clone();
-    let result;
+    let mut result = "error".to_string();
 
     let state = STATE.load(deps.storage).unwrap();
 
@@ -40,13 +40,14 @@ pub fn try_blackjack(
             let point_total = bj_find_point_total(bj_state.player.clone());
 
             if point_total > 21 {
-                result = "bust".to_string();
-                bj_state.action = "ready".to_string()
+                result = "lose".to_string();
+                bj_state.action = "ready".to_string();
+                bj_state.result = "lose".to_string();
             } else {
                 result = "play".to_string();
-                bj_state.deck = deck;
                 bj_state.action = "play".to_string()
             }
+            bj_state.deck = deck;
             BLACKJACK.insert(deps.storage, &info.sender, &bj_state).unwrap();
 
             let response = Response::new()
@@ -59,24 +60,43 @@ pub fn try_blackjack(
             if bj_state.action.as_str() != "deal" && bj_state.action.as_str() != "play" {
                 return Err(StdError::generic_err("invalid phase"));
             }
-
+            
+            let mut winnings:u128 = 0;
             let player_point_total = bj_find_point_total(bj_state.player.clone());
 
             let (dealer_point_total, dealer_cards, d) = bj_resolve_dealer(env.clone(), bj_state.dealer, deck);
             bj_state.dealer = dealer_cards.clone();
             bj_state.deck = d;
             bj_state.action = "ready".to_string();
-            BLACKJACK.insert(deps.storage, &info.sender, &bj_state).unwrap();
-
+            
             let send_dealer = bj_return_id_string(dealer_cards);
 
             if dealer_point_total > 21 {
-
-                result = "dealer_bust".to_string();
-
+                result = "win".to_string();
+                winnings = bj_state.wager * 2;
+            } else {
+                if dealer_point_total < player_point_total {
+                    result = "win".to_string();
+                    winnings = bj_state.wager * 2
+                } else if dealer_point_total > player_point_total {
+                    result = "lose".to_string();
+                } else if dealer_point_total == player_point_total {
+                    result = "push".to_string();
+                    winnings = bj_state.wager
+                }
+            }
+            bj_state.result = result.clone();
+            bj_state.winnings = winnings;
+            BLACKJACK.insert(deps.storage, &info.sender, &bj_state).unwrap();
+            if winnings == 0 {
+                let response = Response::new()
+                .add_attribute("result", result)
+                .add_attribute("dealer_cards", send_dealer);
+                Ok(response)
+            } else {
                 let msg = to_binary(&Snip20Msg::transfer_snip(
                     info.sender.clone(),
-                    (bj_state.wager * 2).into()
+                    winnings.into(),
                 ))?;
                 let message = CosmosMsg::Wasm(WasmMsg::Execute {
                     contract_addr: state.known_snip.to_string(),
@@ -89,59 +109,6 @@ pub fn try_blackjack(
                 .add_attribute("result", result)
                 .add_attribute("dealer_cards", send_dealer);
                 Ok(response)
-
-            } else {
-                if dealer_point_total < player_point_total {
-
-                    result = "win".to_string();
-
-                    let msg = to_binary(&Snip20Msg::transfer_snip(
-                        info.sender.clone(),
-                        (bj_state.wager * 2).into()
-                    ))?;
-                    let message = CosmosMsg::Wasm(WasmMsg::Execute {
-                        contract_addr: state.known_snip.to_string(),
-                        code_hash: state.snip_hash,
-                        msg,
-                        funds: vec![],
-                    });
-                    let response = Response::new()
-                    .add_message(message)
-                    .add_attribute("result", result)
-                    .add_attribute("dealer_cards", send_dealer);
-                    Ok(response)
-
-                } else if dealer_point_total > player_point_total {
-
-                    result = "lose".to_string();
-                    let response = Response::new()
-                    .add_attribute("result", result)
-                    .add_attribute("dealer_cards", send_dealer);
-                    Ok(response)
-
-                } else if dealer_point_total == player_point_total {
-
-                    result = "push".to_string();
-
-                    let msg = to_binary(&Snip20Msg::transfer_snip(
-                        info.sender.clone(),
-                        bj_state.wager.into(),
-                    ))?;
-                    let message = CosmosMsg::Wasm(WasmMsg::Execute {
-                        contract_addr: state.known_snip.to_string(),
-                        code_hash: state.snip_hash,
-                        msg,
-                        funds: vec![],
-                    });
-                    let response = Response::new()
-                    .add_message(message)
-                    .add_attribute("result", result)
-                    .add_attribute("dealer_cards", send_dealer);
-                    Ok(response)
-
-                } else {
-                    return Err(StdError::generic_err("unknown error"));
-                }
             }
         }
         "splithitL" => {
@@ -158,7 +125,7 @@ pub fn try_blackjack(
             let point_total = bj_find_point_total(bj_state.player.clone());
 
             if point_total > 21 {
-                result = "bust".to_string();
+                result = "lose".to_string();
                 bj_state.action = "splitR".to_string();
                 bj_state.split_result = "loss".to_string();
             } else {
@@ -188,7 +155,7 @@ pub fn try_blackjack(
             
             bj_state.deck = deck.clone();
 
-            let mut winnings = 0;
+            let mut winnings:u128 = 0;
             let mut send_dealer = "n/a".to_string();
             if point_total > 21 {
 
@@ -240,9 +207,11 @@ pub fn try_blackjack(
                 result = "play".to_string();
                 
             }
+            if result != "play".to_string() {
+                bj_state.result = result.clone();
+                bj_state.winnings = winnings;
+            }
             BLACKJACK.insert(deps.storage, &info.sender, &bj_state).unwrap();
-
-
             if winnings > 0 {
 
                 let msg = to_binary(&Snip20Msg::transfer_snip(
@@ -283,9 +252,8 @@ pub fn try_blackjack(
             bj_state.dealer = dealer_cards.clone();
             bj_state.deck = d;
             bj_state.action = "ready".to_string();
-            BLACKJACK.insert(deps.storage, &info.sender, &bj_state).unwrap();
 
-            let mut winnings = 0;
+            let mut winnings:u128 = 0;
 
             if dealer_point_total > 21 {
                 if bj_state.split_result.as_str() == "loss" {
@@ -323,6 +291,10 @@ pub fn try_blackjack(
             }
             let send_dealer = bj_return_id_string(bj_state.dealer.clone());
 
+            bj_state.result = result.clone();
+            bj_state.winnings = winnings.clone();
+            BLACKJACK.insert(deps.storage, &info.sender, &bj_state).unwrap();
+
             if winnings > 0 {
                 let send_dealer = bj_return_id_string(bj_state.dealer.clone());
 
@@ -353,8 +325,9 @@ pub fn try_blackjack(
             if bj_state.action.as_str() != "deal" {
                 return Err(StdError::generic_err("invalid phase"));
             }
-
             bj_state.action = "ready".to_string();
+            bj_state.result = "surrender".to_string();
+            bj_state.winnings = bj_state.wager / 2;
             BLACKJACK.insert(deps.storage, &info.sender, &bj_state).unwrap();
 
             let msg = to_binary(&Snip20Msg::transfer_snip(
@@ -380,7 +353,7 @@ pub fn try_blackjack(
 
             bj_state.action = "deal".to_string();
             let mut result = "no dealer blackjack".to_string();
-            let mut winnings = 0;
+            let mut winnings:u128 = 0;
             if dealer_point_total == 21 {
                 bj_state.action = "ready".to_string();
                 BLACKJACK.insert(deps.storage, &info.sender, &bj_state).unwrap();
@@ -421,77 +394,6 @@ pub fn try_blackjack(
     }
 }
 
-pub fn bj_find_point_total(
-    cards: Vec<Card>,
-) -> u32 {
-    //add up points
-    let mut i = 0;
-    let mut point_total = 0;
-    while i < cards.len() {
-        point_total += &cards[i].number;
-        i += 1;
-    }
-    // look for aces if over 21
-    i = 0;
-    while i < cards.len() && point_total > 21 {
-        if  cards[i].number == 11 {
-            point_total -= 10;
-        }
-        i += 1;
-    }
-    return point_total;
-}
-
-
-pub fn bj_return_id_string(
-    cards: Vec<Card>,
- ) -> String {
-
-    let mut card_id_array = Vec::new();
-
-    //add up points
-    let mut i = 0;
-    while i < cards.len() {
-        card_id_array.push(cards[i].id);
-        i += 1;
-    }
-    let send_ids = card_id_array
-    .into_iter()
-    .map(|c| c.to_string())
-    .collect::<Vec<String>>()
-    .join(",");
-
-    return send_ids;
-}
-
-pub fn bj_resolve_dealer(
-    env: Env,
-    mut cards: Vec<Card>,
-    mut deck: Vec<Card>,
- ) -> (u32, Vec<Card>, Vec<Card>)  {
-
-    let mut dealer_point_total = bj_find_point_total(cards.clone());
-             
-    while dealer_point_total < 17 {
-
-        let (c, d) = try_draw_card(env.clone(), deck);
-        cards.push(c.clone());
-        deck = d;
-        dealer_point_total += c.number;
-
-        if dealer_point_total > 21 {
-            let mut i = 0;
-            while i < cards.len() && dealer_point_total > 21 {
-                if cards[i].number == 11 {
-                    cards[i].number = 1;
-                    dealer_point_total -= 10;
-                }
-                i += 1;
-            }
-        }  
-    }
-    return (dealer_point_total, cards, deck);
-}
 
 
 pub fn blackjack_receive(
@@ -503,8 +405,11 @@ pub fn blackjack_receive(
 ) -> StdResult<Response> {
 
     let mut state = STATE.load(deps.storage).unwrap();
-    let jackpot_send = amount.u128() / 50;
+    if amount > state.max_bet {
+        return Err(StdError::generic_err("above max bet"));
+    }
 
+    let jackpot_send = amount.u128() / 50;
     state.jackpot += jackpot_send;
     STATE.save(deps.storage, &state).unwrap();
     
@@ -518,6 +423,8 @@ pub fn blackjack_receive(
             split_result: "nosplit".to_string(),
             deck: Vec::new(),
             wager: 0,
+            result: "in progress".to_string(),
+            winnings: 0,
         })
     }
     let mut bj_state:Blackjack = bj_state_option.unwrap();
@@ -535,6 +442,7 @@ pub fn blackjack_receive(
             bj_state.dealer = Vec::new();
             bj_state.split = Vec::new();
             bj_state.split_result = "nosplit".to_string();
+            bj_state.result = "in progress".to_string();
 
             let (c, d) = try_draw_card(env.clone(), deck);
             bj_state.player.push(c.clone());
@@ -561,7 +469,7 @@ pub fn blackjack_receive(
                 result = "insurance".to_string();
                 bj_state.action = "insurance".to_string();
             }
-            let mut winnings = 0;
+            let mut winnings:u128 = 0;
             let player_point_total = bj_find_point_total(bj_state.player.clone());
             if player_point_total == 21 {
                 bj_state.action = "ready".to_string();
@@ -574,15 +482,18 @@ pub fn blackjack_receive(
                     result = "blackjack".to_string();
                 }
             }
-            BLACKJACK.insert(deps.storage, &from, &bj_state).unwrap();
             let send_player = bj_return_id_string(bj_state.player.clone());
             if winnings == 0 {
+                BLACKJACK.insert(deps.storage, &from, &bj_state).unwrap();
                 let response = Response::new()
                 .add_attribute("player_cards", send_player)
                 .add_attribute("dealer_cards", send_dealer)
                 .add_attribute("result", result);
                 Ok(response)
             } else {
+                bj_state.result = result.clone();
+                bj_state.winnings = winnings.clone();
+                BLACKJACK.insert(deps.storage, &from, &bj_state).unwrap();
                 send_dealer = bj_return_id_string(bj_state.dealer.clone());
 
                 let msg = to_binary(&Snip20Msg::transfer_snip(
@@ -666,18 +577,47 @@ pub fn blackjack_receive(
             bj_state.dealer = dealer_cards.clone();
             bj_state.deck = d;
             bj_state.action = "ready".to_string();
-            BLACKJACK.insert(deps.storage, &from, &bj_state).unwrap();
 
             let send_dealer = bj_return_id_string(dealer_cards);
+            let mut winnings = 0u128;
+            let result;
 
             if dealer_point_total > 21 {
 
-                let result = "dealer_bust".to_string();
+                result = "win".to_string();
+                winnings = bj_state.wager * 4;
 
+            } else {
+                
+                if dealer_point_total < player_point_total {
 
+                    result = "win".to_string();
+                    winnings = bj_state.wager * 4;
+
+                } else if dealer_point_total > player_point_total {
+
+                    result = "lose".to_string();
+
+                } else {
+
+                    result = "push".to_string();
+                    winnings = bj_state.wager * 2;
+                }
+            }
+            bj_state.result = result.clone();
+            bj_state.winnings = winnings.clone();
+            BLACKJACK.insert(deps.storage, &from, &bj_state).unwrap();
+            
+            if winnings == 0 {
+                let response = Response::new()
+                .add_attribute("new_card", new_card)
+                .add_attribute("result", result)
+                .add_attribute("dealer_cards", send_dealer);
+                Ok(response)
+            } else {
                 let msg = to_binary(&Snip20Msg::transfer_snip(
                     from.clone(),
-                    (bj_state.wager * 4).into()
+                    winnings.into(),
                 ))?;
                 let message = CosmosMsg::Wasm(WasmMsg::Execute {
                     contract_addr: state.known_snip.to_string(),
@@ -687,66 +627,10 @@ pub fn blackjack_receive(
                 });
                 let response = Response::new()
                 .add_message(message)
-                .add_attribute("result", result)
                 .add_attribute("new_card", new_card)
+                .add_attribute("result", result)
                 .add_attribute("dealer_cards", send_dealer);
                 Ok(response)
-
-            } else {
-                if dealer_point_total < player_point_total {
-
-                    let result = "win".to_string();
-
-                    let msg = to_binary(&Snip20Msg::transfer_snip(
-                        from.clone(),
-                        (bj_state.wager * 4).into()
-                    ))?;
-                    let message = CosmosMsg::Wasm(WasmMsg::Execute {
-                        contract_addr: state.known_snip.to_string(),
-                        code_hash: state.snip_hash,
-                        msg,
-                        funds: vec![],
-                    });
-                    let response = Response::new()
-                    .add_message(message)
-                    .add_attribute("result", result)
-                    .add_attribute("new_card", new_card)
-                    .add_attribute("dealer_cards", send_dealer);
-                    Ok(response)
-
-                } else if dealer_point_total > player_point_total {
-
-                    let result = "lose".to_string();
-                    let response = Response::new()
-                    .add_attribute("result", result)
-                    .add_attribute("new_card", new_card)
-                    .add_attribute("dealer_cards", send_dealer);
-                    Ok(response)
-
-                } else if dealer_point_total == player_point_total {
-
-                    let result = "push".to_string();
-
-                    let msg = to_binary(&Snip20Msg::transfer_snip(
-                        from.clone(),
-                        (bj_state.wager * 2).into(),
-                    ))?;
-                    let message = CosmosMsg::Wasm(WasmMsg::Execute {
-                        contract_addr: state.known_snip.to_string(),
-                        code_hash: state.snip_hash,
-                        msg,
-                        funds: vec![],
-                    });
-                    let response = Response::new()
-                    .add_message(message)
-                    .add_attribute("result", result)
-                    .add_attribute("new_card", new_card)
-                    .add_attribute("dealer_cards", send_dealer);
-                    Ok(response)
-
-                } else {
-                    return Err(StdError::generic_err("unknown error"));
-                }
             }
         }
         "insurance" => {
@@ -764,7 +648,7 @@ pub fn blackjack_receive(
             if dealer_point_total == 21 {
                 bj_state.action = "ready".to_string();
                 BLACKJACK.insert(deps.storage, &from, &bj_state).unwrap();
-                let mut winnings = bj_state.wager;
+                let mut winnings:u128 = bj_state.wager;
                 let send_dealer = bj_return_id_string(bj_state.dealer.clone());
                 let player_point_total = bj_find_point_total(bj_state.player.clone());
                 result = "insurance win".to_string();
@@ -799,4 +683,76 @@ pub fn blackjack_receive(
             return Err(StdError::generic_err("invalid action"));
         }
     }
+}
+
+pub fn bj_find_point_total(
+    cards: Vec<Card>,
+) -> u32 {
+    //add up points
+    let mut i = 0;
+    let mut point_total = 0;
+    while i < cards.len() {
+        point_total += &cards[i].number;
+        i += 1;
+    }
+    // look for aces if over 21
+    i = 0;
+    while i < cards.len() && point_total > 21 {
+        if  cards[i].number == 11 {
+            point_total -= 10;
+        }
+        i += 1;
+    }
+    return point_total;
+}
+
+
+pub fn bj_return_id_string(
+    cards: Vec<Card>,
+ ) -> String {
+
+    let mut card_id_array = Vec::new();
+
+    //add up points
+    let mut i = 0;
+    while i < cards.len() {
+        card_id_array.push(cards[i].id);
+        i += 1;
+    }
+    let send_ids = card_id_array
+    .into_iter()
+    .map(|c| c.to_string())
+    .collect::<Vec<String>>()
+    .join(",");
+
+    return send_ids;
+}
+
+pub fn bj_resolve_dealer(
+    env: Env,
+    mut cards: Vec<Card>,
+    mut deck: Vec<Card>,
+ ) -> (u32, Vec<Card>, Vec<Card>)  {
+
+    let mut dealer_point_total = bj_find_point_total(cards.clone());
+             
+    while dealer_point_total < 17 {
+
+        let (c, d) = try_draw_card(env.clone(), deck);
+        cards.push(c.clone());
+        deck = d;
+        dealer_point_total += c.number;
+
+        if dealer_point_total > 21 {
+            let mut i = 0;
+            while i < cards.len() && dealer_point_total > 21 {
+                if cards[i].number == 11 {
+                    cards[i].number = 1;
+                    dealer_point_total -= 10;
+                }
+                i += 1;
+            }
+        }  
+    }
+    return (dealer_point_total, cards, deck);
 }

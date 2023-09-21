@@ -1,4 +1,4 @@
-use cosmwasm_std::{Env, Response, StdResult, Uint128, Addr, DepsMut,};
+use cosmwasm_std::{Env, Response, StdResult, Uint128, Addr, DepsMut, StdError};
 
 
 use crate::state::{Card, ADMIN};
@@ -342,13 +342,13 @@ pub fn try_draw_card(env: Env, mut deck: Vec<Card>) -> (Card, Vec<Card>) {
 pub fn deposit_receive(
     deps: DepsMut,
     _env: Env,
-    _from: Addr,
-    amount: Uint128,
+    from: Addr,
+    _amount: Uint128,
 ) -> StdResult<Response> {
 
-    let mut admin = ADMIN.load(deps.storage).unwrap();
-    admin.vault += amount.u128();
-    ADMIN.save(deps.storage, &admin).unwrap();
-
+    let admin = ADMIN.load(deps.storage).unwrap();
+    if from != admin.admin {
+        return Err(StdError::generic_err("not authorized"));
+    }
     Ok(Response::default())
 }

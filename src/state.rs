@@ -2,16 +2,16 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{Addr, Timestamp, Uint128};
+use crate::msg::BetMsg;
 
 use secret_toolkit_storage::{Keymap, Item};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct State {
-    pub active_drawing: bool,
     pub entries: u32,
     pub drawing_end: Timestamp,
-    pub winner: Addr,
-    pub message: String,
+    pub last_drawing: Timestamp,
+    pub winner: u32,
     pub max_bet: Uint128,
     pub known_snip: Addr,
     pub snip_hash: String,
@@ -22,7 +22,6 @@ pub struct State {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct Admin {
     pub admin: Addr,
-    pub vault: u128,
 
 }
 
@@ -59,6 +58,19 @@ pub struct Blackjack {
     pub split_result: String,
     pub deck: Vec<Card>,
     pub wager: u128,
+    pub result: String,
+    pub winnings: u128,
 }
 
 pub static BLACKJACK: Keymap<Addr, Blackjack> = Keymap::new(b"blackjack");
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct LastSpin {
+    pub winning_number: u32,
+    pub bets: Box<[BetMsg]>,
+    pub winnings: u128,
+}
+
+pub static LASTSPIN: Keymap<Addr, LastSpin> = Keymap::new(b"lastspin");
+
+
