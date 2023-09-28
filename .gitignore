@@ -23,4 +23,4 @@ contract.wasm.gz*
 # Integration tests
 tests/node_modules/*
 
-node/index.js
+node/

@@ -59,6 +59,7 @@ pub fn execute(
 ) -> Result<Response, StdError> {
     match msg {
         ExecuteMsg::Withdraw {amount} => try_withdraw(deps, env, info, amount),
+        ExecuteMsg::ChangeAdmin {address} => change_admin(deps, env, info, address),
         ExecuteMsg::Raffle {} => try_raffle(deps, env, info),
         ExecuteMsg::Blackjack {action} => try_blackjack(deps, env, info, action),
         ExecuteMsg::Receive {
@@ -99,7 +100,23 @@ pub fn try_withdraw(
     Ok(response)
 }
 
-
+pub fn change_admin(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    address: Addr,
+) -> StdResult<Response> {
+    
+    let admin = ADMIN.load(deps.storage).unwrap();
+    if info.sender != admin.admin {
+        return Err(StdError::generic_err("not authorized"));
+    }
+    let new_admin = Admin {
+        admin: address,
+    };
+    ADMIN.save(deps.storage, &new_admin).unwrap();
+    Ok(Response::default())
+}
 
 
 

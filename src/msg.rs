@@ -29,6 +29,9 @@ pub enum ExecuteMsg {
         memo: Option<String>,
         msg: Binary,
     },
+    ChangeAdmin {
+        address: Addr,
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
