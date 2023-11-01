@@ -46,7 +46,6 @@ pub fn instantiate(
         msg,
         funds: vec![],
     });
-
     Ok(Response::new().add_message(message))
 }
 
