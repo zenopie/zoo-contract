@@ -5,13 +5,10 @@ use cosmwasm_std::{
 };
 
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse, Snip20Msg,
-    ReceiveMsg, BjStateResponse, TicketLogResponse, LastRaffleResponse, LastRouletteResponse
+    ReceiveMsg, LastRouletteResponse
 };
-use crate::state::{STATE, State, ADMIN, Admin, Blackjack, BLACKJACK, TICKETLOG, LASTSPIN, LastSpin};
-use crate::operations::{deposit_receive};
-use crate::blackjack::{try_blackjack, blackjack_receive};
+use crate::state::{STATE, State, ADMIN, Admin, LASTSPIN, LastSpin};
 use crate::roulette::{roulette_receive};
-use crate::raffle::{raffle_receive, try_raffle};
 
 
 #[entry_point]
@@ -22,22 +19,18 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response, StdError> {
     let state = State {
-        drawing_end: env.block.time.clone().plus_seconds(604800),
-        last_drawing: env.block.time.clone(),
-        entries: 0,
         known_snip: msg.known_snip,
         snip_hash: msg.snip_hash,
-        winner: 0,
+        decimal: msg.decimal,
         max_bet: msg.max_bet,
-        jackpot: 0,
-        next_jackpot: 0,
+        vault: Uint128::zero(),
     };
     let admin = Admin {
         admin: info.sender.clone(),
     };
 
-    STATE.save(deps.storage, &state).unwrap();
-    ADMIN.save(deps.storage, &admin).unwrap();
+    STATE.save(deps.storage, &state)?;
+    ADMIN.save(deps.storage, &admin)?;
 
     let msg = to_binary(&Snip20Msg::register_receive(env.contract.code_hash))?;
     let message = CosmosMsg::Wasm(WasmMsg::Execute {
@@ -59,8 +52,7 @@ pub fn execute(
     match msg {
         ExecuteMsg::Withdraw {amount} => try_withdraw(deps, env, info, amount),
         ExecuteMsg::ChangeAdmin {address} => change_admin(deps, env, info, address),
-        ExecuteMsg::Raffle {} => try_raffle(deps, env, info),
-        ExecuteMsg::Blackjack {action} => try_blackjack(deps, env, info, action),
+        ExecuteMsg::ChangeMaxBet {max} => change_max_bet(deps, env, info, max),
         ExecuteMsg::Receive {
             sender,
             from,
@@ -70,6 +62,7 @@ pub fn execute(
         } => try_receive(deps, env, info, sender, from, amount, msg),  
     }
 }
+
 
 pub fn try_withdraw(
     deps: DepsMut,
@@ -83,7 +76,9 @@ pub fn try_withdraw(
         return Err(StdError::generic_err("not authorized"));
     }
 
-    let state = STATE.load(deps.storage).unwrap();
+    let mut state = STATE.load(deps.storage).unwrap();
+    state.vault -= amount;
+    STATE.save(deps.storage, &state).unwrap();
     let msg = to_binary(&Snip20Msg::transfer_snip(
         info.sender,
         amount,
@@ -117,6 +112,22 @@ pub fn change_admin(
     Ok(Response::default())
 }
 
+pub fn change_max_bet(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    max: Uint128,
+) -> StdResult<Response> {
+    
+    let admin = ADMIN.load(deps.storage).unwrap();
+    if info.sender != admin.admin {
+        return Err(StdError::generic_err("not authorized"));
+    }
+    let mut state = STATE.load(deps.storage).unwrap();
+    state.max_bet = max;
+    STATE.save(deps.storage, &state).unwrap();
+    Ok(Response::default())
+}
 
 
 pub fn try_receive(
@@ -133,10 +144,25 @@ pub fn try_receive(
 
     match msg {
         ReceiveMsg::Roulette{bets} => roulette_receive(deps, env, from, amount, bets),
-        ReceiveMsg::Raffle{quantity} => raffle_receive(deps, env, from, amount, quantity),
-        ReceiveMsg::Blackjack{action} => blackjack_receive(deps, env, from, amount, action),
         ReceiveMsg::Deposit {} => deposit_receive(deps, env, from, amount),
     }   
+}
+
+pub fn deposit_receive(
+    deps: DepsMut,
+    _env: Env,
+    from: Addr,
+    amount: Uint128,
+) -> StdResult<Response> {
+
+    let admin = ADMIN.load(deps.storage).unwrap();
+    if from != admin.admin {
+        return Err(StdError::generic_err("not authorized"));
+    }
+    let mut state = STATE.load(deps.storage).unwrap();
+    state.vault += amount;
+    STATE.save(deps.storage, &state).unwrap();
+    Ok(Response::default())
 }
 
 
@@ -144,9 +170,6 @@ pub fn try_receive(
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::GetState {} => to_binary(&query_state(deps)?),
-        QueryMsg::BjState {address} => to_binary(&query_bjstate(deps, address)?),
-        QueryMsg::TicketLog {address} => to_binary(&query_ticket_log(deps, address)?),
-        QueryMsg::LastRaffle {address} => to_binary(&query_last_raffle(deps, address)?),
         QueryMsg::LastRoulette {address} => to_binary(&query_last_roulette(deps, address)?),
     }
 }
@@ -156,57 +179,6 @@ fn query_state(deps: Deps) -> StdResult<StateResponse> {
     Ok(StateResponse { state: state })
 }
 
-fn query_bjstate(deps: Deps, address: Addr) -> StdResult<BjStateResponse> {
-
-    let mut bj_state_option:Option<Blackjack> = BLACKJACK.get(deps.storage, &address);
-    if bj_state_option.is_none() {
-        bj_state_option = Some(Blackjack{
-            action: "ready".to_string(),
-            dealer: Vec::new(), 
-            player : Vec::new(),
-            split: Vec::new(),
-            split_result: "nosplit".to_string(),
-            deck: Vec::new(),
-            wager: 0,
-            result: "no history".to_string(),
-            winnings: 0,
-        })
-    } 
-    let mut bj_state:Blackjack = bj_state_option.unwrap();
-    if bj_state.result == "in progress".to_string() {
-        bj_state.dealer.remove(0);
-    }
-    Ok(BjStateResponse { state: bj_state })
-}
-
-fn query_ticket_log(deps: Deps, address: Addr) -> StdResult<TicketLogResponse> {
-
-    let state = STATE.load(deps.storage).unwrap();
-    let ticket_storage = TICKETLOG.add_suffix(state.drawing_end.to_string().as_bytes());
-    let mut ticket_log_option:Option<Vec<u32>> = ticket_storage.get(deps.storage, &address);
-    if ticket_log_option.is_none() {
-        ticket_log_option = Some(Vec::new());
-    }
-    let ticket_log:Vec<u32> = ticket_log_option.unwrap();
-
-    Ok(TicketLogResponse { tickets: ticket_log })
-}
-
-fn query_last_raffle(deps: Deps, address: Addr) -> StdResult<LastRaffleResponse> {
-
-    let state = STATE.load(deps.storage).unwrap();
-    let ticket_storage = TICKETLOG.add_suffix(state.last_drawing.to_string().as_bytes());
-    let mut ticket_log_option:Option<Vec<u32>> = ticket_storage.get(deps.storage, &address);
-    if ticket_log_option.is_none() {
-        ticket_log_option = Some(Vec::new());
-    }
-    let ticket_log:Vec<u32> = ticket_log_option.unwrap();
-
-    Ok(LastRaffleResponse {
-        winner: state.winner,
-        tickets: ticket_log,
-    })
-}
 
 fn query_last_roulette(deps: Deps, address: Addr) -> StdResult<LastRouletteResponse> {
 
@@ -215,7 +187,7 @@ fn query_last_roulette(deps: Deps, address: Addr) -> StdResult<LastRouletteRespo
         last_roulette_option = Some(LastSpin {
             winning_number: 404,
             bets: Vec::new().into(),
-            winnings: 404,
+            winnings: Uint128::from(404u32),
         });
     }
     let last_roulette:LastSpin = last_roulette_option.unwrap();

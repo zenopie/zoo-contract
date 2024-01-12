@@ -16,16 +16,16 @@ pub fn roulette_receive(
     bets: Box<[BetMsg]>,
 ) -> StdResult<Response> {
 
-    let mut state = STATE.load(deps.storage).unwrap();
+    let mut state = STATE.load(deps.storage)?;
 
     if amount > state.max_bet {
         return Err(StdError::generic_err("above max bet"));
     }
 
 
-    let mut totalamount = 0u128;
-    let mut winnings = 0u128;
-    let mut bettotal = 0u128;
+    let mut totalamount = Uint128::zero();
+    let mut winnings = Uint128::zero();
+    let mut bettotal = Uint128::zero();
 
     let random_binary = env.block.random.clone();
     let random_bytes = &random_binary.as_ref().unwrap().0;
@@ -41,7 +41,7 @@ pub fn roulette_receive(
     let mut index = 0;
     while index < bets.len() { 
 
-        totalamount += bets[index].wager * 1000000;
+        totalamount += bets[index].wager * state.decimal;
 
 
         match bets[index].bet_type.as_str() {
@@ -59,7 +59,7 @@ pub fn roulette_receive(
                         let mut j = 0;
                         while j < valid_split.len() {
                             if spin == valid_split[j].trim().parse::<u32>().unwrap() {
-                                winnings += &bets[index].wager * 5;
+                                winnings += &bets[index].wager * Uint128::from(5u32);
                                 bettotal += &bets[index].wager;
                             }
                             j += 1;
@@ -82,7 +82,7 @@ pub fn roulette_receive(
                         let mut j = 0;
                         while j < valid_split.len() {
                             if spin == valid_split[j].trim().parse::<u32>().unwrap() {
-                                winnings += &bets[index].wager * 11;
+                                winnings += &bets[index].wager * Uint128::from(11u32);
                                 bettotal += &bets[index].wager;
                             }
                             j += 1;
@@ -111,7 +111,7 @@ pub fn roulette_receive(
                         let mut j = 0;
                         while j < valid_split.len() {
                             if spin == valid_split[j].trim().parse::<u32>().unwrap() {
-                                winnings += &bets[index].wager * 17;
+                                winnings += &bets[index].wager * Uint128::from(17u32);
                                 bettotal += &bets[index].wager;
                             }
                             j += 1;
@@ -136,7 +136,7 @@ pub fn roulette_receive(
                         let mut j = 0;
                         while j < valid_split.len() {
                             if spin == valid_split[j].trim().parse::<u32>().unwrap() {
-                                winnings += &bets[index].wager * 8;
+                                winnings += &bets[index].wager * Uint128::from(8u32);
                                 bettotal += &bets[index].wager;
                             }
                             j += 1;
@@ -173,7 +173,7 @@ pub fn roulette_receive(
             }
             "inside_whole" => {
                 if &spin.to_string() == &bets[index].numbers {
-                    winnings += &bets[index].wager * 35;
+                    winnings += &bets[index].wager * Uint128::from(35u32);
                     bettotal += &bets[index].wager;
                 }
             }
@@ -191,7 +191,7 @@ pub fn roulette_receive(
                         let mut j = 0;
                         while j < valid_split.len() {
                             if spin == valid_split[j].trim().parse::<u32>().unwrap() {
-                                winnings += &bets[index].wager * 2;
+                                winnings += &bets[index].wager * Uint128::from(2u32);
                                 bettotal += &bets[index].wager;
                             }
                             j += 1;
@@ -215,7 +215,7 @@ pub fn roulette_receive(
                         let mut j = 0;
                         while j < valid_split.len() {
                             if spin == valid_split[j].trim().parse::<u32>().unwrap() {
-                                winnings += &bets[index].wager * 2;
+                                winnings += &bets[index].wager * Uint128::from(2u32);
                                 bettotal += &bets[index].wager;
                             }
                             j += 1;
@@ -262,25 +262,25 @@ pub fn roulette_receive(
         index += 1;
     }
 
-    if totalamount != amount.u128() {
+    if totalamount != amount {
         return Err(StdError::generic_err("invalid amount"));
     }
 
 
-    let sendback = (winnings + bettotal) * 1000000;
-    let jackpot_send = amount.u128() / 50;
+    let sendback = (winnings + bettotal) * state.decimal;
+    state.vault += amount;
+    state.vault -= sendback;
 
-    state.jackpot += jackpot_send;
-    STATE.save(deps.storage, &state).unwrap();
+    STATE.save(deps.storage, &state)?;
 
     let roulette_history = LastSpin {
         winning_number: spin,
         bets: bets,
         winnings: sendback,
     };
-    LASTSPIN.insert(deps.storage, &from, &roulette_history).unwrap();
+    LASTSPIN.insert(deps.storage, &from, &roulette_history)?;
 
-    if sendback > 0 {
+    if sendback > Uint128::zero() {
 
         let msg = to_binary(&Snip20Msg::transfer_snip(
             from,
@@ -292,17 +292,24 @@ pub fn roulette_receive(
             msg,
             funds: vec![],
         });
+
         let response = Response::new()
         .add_attribute("random_number", spin.to_string())
         .add_attribute("winValue", winnings.to_string())
         .add_attribute("betTotal", bettotal.to_string())
-        .add_message(message);
+        .add_attribute("test", state.vault.to_string())
+        .add_message(message)
+        .add_message(CosmosMsg::finalize_tx());
         Ok(response)
+
     } else {
+
         let response = Response::new()
         .add_attribute("random_number", spin.to_string())
         .add_attribute("winValue", winnings.to_string())
-        .add_attribute("betTotal", bettotal.to_string());
+        .add_attribute("betTotal", bettotal.to_string())
+        .add_attribute("test", state.vault.to_string())
+        .add_message(CosmosMsg::finalize_tx());
         Ok(response)
     }
 }

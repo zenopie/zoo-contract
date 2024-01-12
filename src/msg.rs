@@ -3,13 +3,14 @@ use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{Addr, Binary, Uint128};
 
-use crate::state::{State, Blackjack, LastSpin};
+use crate::state::{State, LastSpin};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct InstantiateMsg {
     pub known_snip: Addr,
     pub snip_hash: String,
     pub max_bet: Uint128,
+    pub decimal: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
@@ -17,10 +18,6 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
     Withdraw {
         amount: Uint128,
-    },
-    Raffle {},
-    Blackjack {
-        action: String,
     },
     Receive {
         sender: Addr,
@@ -31,6 +28,9 @@ pub enum ExecuteMsg {
     },
     ChangeAdmin {
         address: Addr,
+    },
+    ChangeMaxBet {
+        max: Uint128,
     }
 }
 
@@ -38,7 +38,7 @@ pub enum ExecuteMsg {
 pub struct BetMsg {
     pub bet_type: String,
     pub numbers: String,
-    pub wager: u128,
+    pub wager: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
@@ -47,12 +47,6 @@ pub enum ReceiveMsg {
     Roulette {
         bets: Box<[BetMsg]>,
     },
-    Raffle {
-        quantity: u32,
-    },
-    Blackjack {
-        action: String,
-    },
     Deposit {},
 }
 
@@ -60,31 +54,12 @@ pub enum ReceiveMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     GetState {},
-    BjState {address: Addr,},
-    TicketLog {address: Addr,},
-    LastRaffle {address: Addr,},
     LastRoulette {address: Addr,},
 }
 // We define a custom struct for each query response
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct StateResponse {
     pub state: State,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
-pub struct BjStateResponse {
-    pub state: Blackjack,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
-pub struct TicketLogResponse {
-    pub tickets: Vec<u32>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
-pub struct LastRaffleResponse {
-    pub winner: u32,
-    pub tickets: Vec<u32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
