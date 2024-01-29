@@ -133,7 +133,7 @@ pub fn change_max_bet(
 pub fn try_receive(
     deps: DepsMut,
     env: Env,
-    _info: MessageInfo,
+    info: MessageInfo,
     _sender: Addr,
     from: Addr,
     amount: Uint128,
@@ -141,6 +141,11 @@ pub fn try_receive(
 ) -> Result<Response, StdError> {
 
     let msg: ReceiveMsg = from_binary(&msg)?;
+
+    let state = STATE.load(deps.storage)?;
+    if info.sender != state.known_snip {
+        return Err(StdError::generic_err("invalid snip"));
+    }
 
     match msg {
         ReceiveMsg::Roulette{bets} => roulette_receive(deps, env, from, amount, bets),
@@ -155,13 +160,13 @@ pub fn deposit_receive(
     amount: Uint128,
 ) -> StdResult<Response> {
 
-    let admin = ADMIN.load(deps.storage).unwrap();
+    let admin = ADMIN.load(deps.storage)?;
     if from != admin.admin {
         return Err(StdError::generic_err("not authorized"));
     }
-    let mut state = STATE.load(deps.storage).unwrap();
+    let mut state = STATE.load(deps.storage)?;
     state.vault += amount;
-    STATE.save(deps.storage, &state).unwrap();
+    STATE.save(deps.storage, &state)?;
     Ok(Response::default())
 }
 
@@ -175,7 +180,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
 }
 
 fn query_state(deps: Deps) -> StdResult<StateResponse> {
-    let state = STATE.load(deps.storage).unwrap();
+    let state = STATE.load(deps.storage)?;
     Ok(StateResponse { state: state })
 }
 

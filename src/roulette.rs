@@ -269,7 +269,11 @@ pub fn roulette_receive(
 
     let sendback = (winnings + bettotal) * state.decimal;
     state.vault += amount;
-    state.vault -= sendback;
+    if sendback < state.vault {
+        state.vault -= sendback;
+    } else {
+        return Err(StdError::generic_err("vault empty"));
+    }
 
     STATE.save(deps.storage, &state)?;
 
@@ -297,7 +301,7 @@ pub fn roulette_receive(
         .add_attribute("random_number", spin.to_string())
         .add_attribute("winValue", winnings.to_string())
         .add_attribute("betTotal", bettotal.to_string())
-        .add_attribute("test", state.vault.to_string())
+        .add_attribute("vault", state.vault.to_string())
         .add_message(message)
         .add_message(CosmosMsg::finalize_tx());
         Ok(response)
@@ -308,7 +312,7 @@ pub fn roulette_receive(
         .add_attribute("random_number", spin.to_string())
         .add_attribute("winValue", winnings.to_string())
         .add_attribute("betTotal", bettotal.to_string())
-        .add_attribute("test", state.vault.to_string())
+        .add_attribute("vault", state.vault.to_string())
         .add_message(CosmosMsg::finalize_tx());
         Ok(response)
     }
